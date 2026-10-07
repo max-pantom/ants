@@ -1,0 +1,24 @@
+{
+  "name": "hello",
+  "description": "Example third-party plugin. Copy this folder to start your own: a manifest that declares tools, and a module that exports them.",
+  "main": "index.mjs",
+  "tools": [
+    {
+      "name": "greet",
+      "description": "Say hello to someone by name.",
+      "parameters": {
+        "type": "object",
+        "properties": { "name": { "type": "string" } },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "roll",
+      "description": "Roll a die.",
+      "parameters": {
+        "type": "object",
+        "properties": { "sides": { "type": "integer", "minimum": 2, "maximum": 1000 } }
+      }
+    }
+  ]
+}

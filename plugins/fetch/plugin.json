@@ -1,0 +1,29 @@
+{
+  "name": "fetch",
+  "description": "Fetch web pages and APIs over HTTP without a browser.",
+  "tools": [
+    {
+      "name": "get",
+      "description": "GET a URL. HTML is returned as readable text.",
+      "parameters": {
+        "type": "object",
+        "properties": { "url": { "type": "string" } },
+        "required": ["url"]
+      }
+    },
+    {
+      "name": "post",
+      "description": "POST to a URL. This can send or publish, so it waits for the user's approval.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string" },
+          "body": { "type": "string" },
+          "content_type": { "type": "string", "description": "Default application/json" }
+        },
+        "required": ["url", "body"]
+      },
+      "gate": true
+    }
+  ]
+}

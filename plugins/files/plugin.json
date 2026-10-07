@@ -1,0 +1,50 @@
+{
+  "name": "files",
+  "description": "Read, write, and list files on the shared machine. Relative paths resolve in the shared workspace.",
+  "tools": [
+    {
+      "name": "read",
+      "description": "Read a text file. Relative paths resolve inside the shared workspace every agent can see.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "offset": { "type": "integer", "description": "First line, 1-based" },
+          "limit": { "type": "integer", "description": "Max lines" }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "write",
+      "description": "Write a text file, creating folders as needed. Overwrites unless append is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "content": { "type": "string" },
+          "append": { "type": "boolean" }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "name": "list",
+      "description": "List a folder. Defaults to the shared workspace.",
+      "parameters": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } }
+      }
+    },
+    {
+      "name": "delete",
+      "description": "Delete a file or empty folder. Waits for the user's approval.",
+      "parameters": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"]
+      },
+      "gate": true
+    }
+  ]
+}

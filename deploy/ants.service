@@ -1,0 +1,29 @@
+# systemd unit for running Ants on a VPS. The process survives logout, so agents
+# keep working while your laptop is closed.
+#
+#   sudo useradd --system --home /var/lib/ants --create-home ants
+#   sudo cp -r . /opt/ants && cd /opt/ants && sudo npm ci && sudo npm run build
+#   sudo -u ants npx playwright install chromium
+#   sudo cp deploy/ants.service /etc/systemd/system/ && sudo systemctl enable --now ants
+#   journalctl -u ants   # the first-boot setup code is printed here
+[Unit]
+Description=Ants
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ants
+Group=ants
+WorkingDirectory=/opt/ants
+ExecStart=/usr/bin/node /opt/ants/bin/ants.js serve --data /var/lib/ants --host 127.0.0.1 --port 4747
+Restart=on-failure
+RestartSec=3
+Environment=NODE_ENV=production
+# Optional: skip the setup code by setting the password here once, then remove it.
+# Environment=ANTS_PASSWORD=change-me
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/ants
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+{
+  "name": "shell",
+  "description": "Run a shell command on the shared machine. Every command waits for the user's approval, because a command can send, spend, or delete.",
+  "tools": [
+    {
+      "name": "run",
+      "description": "Run a bash command in the shared workspace and return its output. Waits for the user's approval.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string" },
+          "timeout_s": { "type": "integer", "description": "Default 60, max 600" }
+        },
+        "required": ["command"]
+      },
+      "gate": true
+    }
+  ]
+}
