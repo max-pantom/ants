@@ -3,7 +3,7 @@ import { del, get, patch, post, put, type AgentDetail, type AppState, type Setti
 import { onLive } from "../live";
 import { linkProps, navigate } from "../router";
 import { clock, timeAgo } from "../util";
-import { Avatar } from "./Icons";
+import { ANTS, Avatar, parseAvatar } from "./Icons";
 import { ModelInput } from "./Settings";
 import { Confirm } from "./Dialogs";
 
@@ -14,7 +14,7 @@ export function AgentsTab({ state, settings, id }: { state: AppState; settings: 
       <div className="split-list">
         {state.agents.map((a) => (
           <a key={a.id} className={`nav-item ${a.id === current?.id ? "active" : ""}`} {...linkProps(`/settings/agents/${a.id}`)}>
-            <Avatar name={a.name} kind={a.kind} />
+            <Avatar agent={a} />
             <span className="nav-text">
               <span className="nav-name">{a.name}</span>
               <span className="nav-sub">{a.resolved ? `${a.resolved.provider} · ${a.resolved.model}` : "no model"}</span>
@@ -60,9 +60,10 @@ function Profile({ d, settings }: { d: AgentDetail; settings: Settings }) {
   return (
     <section className="card">
       <h2>
-        <Avatar name={a.name} size={24} kind={a.kind} /> {a.name}
+        <Avatar agent={a} size={24} /> {a.name}
         {a.kind === "coordinator" && <span className="pill">coordinator</span>}
       </h2>
+      <AvatarPicker a={a} />
       <div className="grid2">
         <label>
           Name
@@ -368,5 +369,61 @@ function Danger({ d }: { d: AgentDetail }) {
         />
       )}
     </section>
+  );
+}
+
+/** Pick which ant this agent is, tint its background, or upload a picture. Saves as you click. */
+function AvatarPicker({ a }: { a: AgentDetail["agent"] }) {
+  const cur = parseAvatar(a.avatar, a.id);
+  const [error, setError] = useState<string | null>(null);
+  const save = async (avatar: string | null) => {
+    setError(null);
+    try {
+      await patch(`/api/agents/${a.id}`, { avatar });
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+  const pickBg = (bg: string) => cur.type === "ant" && save(`ant:${cur.ant.id}:${bg}`);
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    setError(null);
+    const res = await fetch(`/api/agents/${a.id}/avatar`, { method: "PUT", headers: { "content-type": file.type }, body: file });
+    if (!res.ok) setError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Upload failed.");
+  };
+  return (
+    <div className="avatar-picker">
+      <div className="ant-row" role="radiogroup" aria-label="Agent picture">
+        {ANTS.map((ant) => (
+          <button
+            key={ant.id}
+            type="button"
+            role="radio"
+            aria-checked={cur.type === "ant" && cur.ant.id === ant.id}
+            className={`ant-choice ${cur.type === "ant" && cur.ant.id === ant.id ? "on" : ""}`}
+            onClick={() => save(`ant:${ant.id}${cur.type === "ant" && cur.bg ? `:${cur.bg}` : ""}`)}
+          >
+            <Avatar avatar={`ant:${ant.id}${cur.type === "ant" && cur.bg ? `:${cur.bg}` : ""}`} seed={a.id} size={56} walking={cur.type === "ant" && cur.ant.id === ant.id} />
+            <span>{ant.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="row">
+        <label className="inline">
+          Background
+          <input type="color" value={cur.type === "ant" && cur.bg ? cur.bg : "#f3e9e4"} disabled={cur.type !== "ant"} onChange={(e) => void pickBg(e.target.value)} />
+        </label>
+        <label className="btn ghost file-btn">
+          Upload picture
+          <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => void upload(e.target.files?.[0])} />
+        </label>
+        {a.avatar && (
+          <button type="button" className="btn ghost" onClick={() => void save(null)}>
+            Use the default
+          </button>
+        )}
+      </div>
+      {error && <p className="error small">{error}</p>}
+    </div>
   );
 }

@@ -15,6 +15,7 @@ export function Composer({
   skills,
   members,
   busy,
+  chip,
   onSend,
   onStop,
 }: {
@@ -23,6 +24,8 @@ export function Composer({
   skills: Skill[];
   members: Agent[];
   busy: boolean;
+  /** Small label under the input, e.g. the model this agent will use. */
+  chip?: { text: string; href?: string };
   onSend: (text: string) => Promise<void>;
   onStop: () => void;
 }) {
@@ -73,7 +76,7 @@ export function Composer({
           insert: text.slice(0, text.length - at[2].length - 1) + `@${m.name} `,
           label: (
             <>
-              <Avatar name={m.name} size={18} kind={m.kind} /> <b>{m.name}</b>
+              <Avatar agent={m} size={18} /> <b>{m.name}</b>
             </>
           ),
           hint: m.role,
@@ -130,15 +133,19 @@ export function Composer({
       )}
       <div className="composer">
         <textarea ref={ta} rows={1} value={text} placeholder={placeholder} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} />
-        {busy && !text.trim() ? (
-          <button className="send stop" onClick={onStop} aria-label="Stop" title="Stop">
-            <Icon name="stop" />
-          </button>
-        ) : (
-          <button className="send" onClick={() => void submit()} disabled={!text.trim() || sending} aria-label="Send">
-            <Icon name="send" />
-          </button>
-        )}
+        <div className="composer-bar">
+          {chip && (chip.href ? <a className="chip-btn" href={chip.href} title="Change the model">{chip.text}</a> : <span className="chip-btn">{chip.text}</span>)}
+          <span className="spacer" />
+          {busy && !text.trim() ? (
+            <button className="send stop" onClick={onStop} aria-label="Stop" title="Stop">
+              <Icon name="stop" />
+            </button>
+          ) : (
+            <button className="send" onClick={() => void submit()} disabled={!text.trim() || sending} aria-label="Send">
+              <Icon name="send" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="composer-hint">
         {skills.length > 0 ? <span>/ for skills</span> : null}

@@ -1,50 +1,52 @@
 :root {
-  --bg: #f6f3ee;
-  --panel: #fbf9f5;
+  --bg: #ffffff;
+  --panel: #f7f7f8;
   --surface: #ffffff;
-  --ink: #1f1c18;
-  --ink-2: #5b554c;
-  --ink-3: #8c857a;
-  --line: #e7e1d7;
-  --line-2: #d9d1c4;
-  --accent: #b4481e;
+  --bubble: #f1f1f4;
+  --ink: #17171a;
+  --ink-2: #5c5c66;
+  --ink-3: #8d8d97;
+  --line: #ececf0;
+  --line-2: #dcdce2;
+  --accent: #d93f31;
   --accent-ink: #ffffff;
-  --accent-soft: #f6e6dc;
+  --accent-soft: #fdeceb;
   --good: #2f7a4b;
   --good-soft: #e3f1e7;
   --bad: #b3261e;
   --bad-soft: #f9e3e1;
   --warn-soft: #fbf0d9;
-  --me: #1f1c18;
-  --me-ink: #fbf9f5;
-  --shadow: 0 1px 2px rgb(31 28 24 / 6%), 0 8px 24px rgb(31 28 24 / 6%);
+  --me: #d93f31;
+  --me-ink: #ffffff;
+  --shadow: 0 1px 2px rgb(20 20 30 / 5%), 0 8px 24px rgb(20 20 30 / 6%);
   --radius: 14px;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
-  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --serif: var(--sans);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #151412;
-    --panel: #1a1917;
-    --surface: #211f1c;
-    --ink: #ece7df;
-    --ink-2: #b3ab9f;
-    --ink-3: #847d72;
-    --line: #2c2a26;
-    --line-2: #3a3732;
-    --accent: #e0703f;
-    --accent-ink: #1a1310;
-    --accent-soft: #3a2419;
+    --bg: #121214;
+    --panel: #18181b;
+    --surface: #1f1f23;
+    --bubble: #26262b;
+    --ink: #f2f2f5;
+    --ink-2: #b4b4be;
+    --ink-3: #82828c;
+    --line: #2a2a30;
+    --line-2: #3a3a42;
+    --accent: #ff6b57;
+    --accent-ink: #1a0f0e;
+    --accent-soft: #3a1f1c;
     --good: #6cc48e;
     --good-soft: #1d3326;
     --bad: #f08a80;
     --bad-soft: #3d1e1b;
     --warn-soft: #362d1a;
-    --me: #ece7df;
-    --me-ink: #1a1917;
+    --me: #ff6b57;
+    --me-ink: #1a0f0e;
     --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 30%);
     color-scheme: dark;
   }
@@ -147,10 +149,9 @@ pre {
   align-items: center;
   gap: 9px;
   padding: 4px 8px 16px;
-  font-family: var(--serif);
-  font-size: 21px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 20px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
 }
 .brand .icon-btn {
   margin-left: auto;
@@ -270,24 +271,43 @@ pre {
 }
 
 .avatar {
-  --h: 20;
+  --ant: var(--accent);
   flex: none;
   display: inline-grid;
   place-items: center;
   border-radius: 50%;
-  font-weight: 650;
-  color: hsl(var(--h) 45% 28%);
-  background: hsl(var(--h) 55% 88%);
-  font-family: var(--serif);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ant) 20%, var(--surface));
+}
+.avatar {
+  position: relative;
+}
+.avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+.avatar:not(.full) img {
+  transform: scale(1.55);
+  transform-origin: 50% 30%;
+}
+.avatar.full img {
+  inset: 7%;
+  width: 86%;
+  height: 86%;
+}
+.avatar.photo {
+  object-fit: cover;
 }
 .avatar.coord {
   border-radius: 30%;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .avatar {
-    color: hsl(var(--h) 55% 82%);
-    background: hsl(var(--h) 25% 24%);
-  }
+.logo {
+  flex: none;
+  display: block;
 }
 
 .group-avatar {
@@ -300,7 +320,7 @@ pre {
   width: 58%;
   height: 58%;
   border-radius: 50%;
-  background: hsl(var(--h) 55% 80%);
+  background: color-mix(in srgb, var(--ant) 45%, var(--surface));
   border: 2px solid var(--panel);
 }
 .group-avatar .dot:nth-child(1) {
@@ -603,9 +623,19 @@ input[type="checkbox"] {
   flex-direction: column;
 }
 .transcript-empty {
-  margin: 18vh auto 0;
+  margin: 12vh auto 0;
   color: var(--ink-3);
   text-align: center;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+.transcript-empty .greeting {
+  margin: 8px 0 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
 .older {
   align-self: center;
@@ -643,6 +673,13 @@ input[type="checkbox"] {
   color: var(--ink-3);
 }
 
+.msg.agent > .msg-body > .md {
+  display: inline-block;
+  max-width: min(100%, 640px);
+  background: var(--bubble);
+  border-radius: 18px 18px 18px 6px;
+  padding: 9px 14px;
+}
 .msg.relayed .msg-body {
   border-left: 2px solid var(--line-2);
   padding-left: 11px;
@@ -917,34 +954,62 @@ input[type="checkbox"] {
 }
 .composer {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--line-2);
-  border-radius: 18px;
-  padding: 7px 7px 7px 15px;
-  box-shadow: var(--shadow);
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bubble);
+  border: 1px solid transparent;
+  border-radius: 22px;
+  padding: 10px 10px 8px 16px;
 }
 .composer:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 60%, var(--line-2));
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2));
+  box-shadow: var(--shadow);
 }
 .composer textarea {
   border: 0;
   outline: 0;
-  padding: 6px 0;
+  padding: 4px 0;
   background: transparent;
   resize: none;
   max-height: 240px;
   line-height: 1.45;
+  width: 100%;
 }
 .composer textarea:focus {
   outline: 0;
+}
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.composer-bar .spacer {
+  flex: 1;
+}
+.chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 60%;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-btn:hover {
+  color: var(--ink);
 }
 .send {
   flex: none;
   width: 34px;
   height: 34px;
-  border-radius: 12px;
+  border-radius: 50%;
   border: 0;
   background: var(--accent);
   color: var(--accent-ink);
@@ -953,7 +1018,7 @@ input[type="checkbox"] {
   cursor: pointer;
 }
 .send:disabled {
-  background: var(--line-2);
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
   color: var(--ink-3);
   cursor: default;
 }
@@ -1578,4 +1643,139 @@ button.chip {
   font-size: 13.5px;
   padding: 8px 18px;
   border-bottom: 1px solid var(--line);
+}
+
+.avatar-picker {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 14px;
+}
+.ant-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ant-choice {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.ant-choice:hover {
+  border-color: var(--line-2);
+}
+.ant-choice.on {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+label.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.file-btn {
+  cursor: pointer;
+}
+
+/* ---------- walking ant ---------- */
+
+.avatar.full > .ant-walker {
+  position: absolute;
+  inset: 7%;
+  width: 86%;
+  height: 86%;
+}
+.ant-walker {
+  display: block;
+  position: relative;
+}
+.ant-bob,
+.ant-frame,
+.ant-eyes {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.ant-bob {
+  transform-origin: 50% 92%;
+  animation: ant-bob 0.8s ease-in-out infinite;
+}
+.ant-frame {
+  overflow: hidden;
+}
+.ant-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1200%;
+  height: 100%;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  animation: ant-walk 0.8s steps(12) infinite;
+}
+.ant-eyes {
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.ant-pupils {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  animation: ant-look 3.6s ease-in-out infinite;
+}
+@keyframes ant-walk {
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes ant-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1.2deg);
+  }
+  25%,
+  75% {
+    transform: translateY(-2.5%) rotate(0deg);
+  }
+  50% {
+    transform: translateY(0) rotate(1.2deg);
+  }
+}
+@keyframes ant-look {
+  0%,
+  8% {
+    transform: translateX(-3%);
+  }
+  42%,
+  58% {
+    transform: translateX(3%);
+  }
+  92%,
+  100% {
+    transform: translateX(-3%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ant-bob,
+  .ant-strip,
+  .ant-pupils {
+    animation: none;
+  }
+}
+
+.nav-item.static {
+  cursor: default;
+}
+.nav-item.static:hover {
+  background: transparent;
 }

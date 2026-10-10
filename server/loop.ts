@@ -39,6 +39,7 @@ import { redactStreaming } from "./secrets.js";
 import { bus } from "./bus.js";
 import { log } from "./log.js";
 import { assertOutbound } from "./privacy.js";
+import { cancelGoal, goalFor, handleAutoCommand, resumeGoal } from "./autonomy.js";
 
 const MAX_STEPS = 30;
 
@@ -81,6 +82,7 @@ export function runTurn(agentId: string, thread: string): Promise<TurnResult> {
 }
 
 export function stopAgent(agentId: string) {
+  cancelGoal(agentId);
   aborts.get(agentId)?.abort();
 }
 
@@ -325,7 +327,8 @@ export function decide(approvalId: string, decision: "approved" | "denied") {
       return true;
     }
   }
-  void runTurn(ap.agentId, ap.runThread);
+  if (goalFor(ap.agentId)) resumeGoal(ap.agentId);
+  else void runTurn(ap.agentId, ap.runThread);
   return true;
 }
 
@@ -348,6 +351,13 @@ export function postUserMessage(thread: string, text: string): Message {
     resolveApproval(ap.id, "denied");
     const m = approvalMessage(ap.id);
     if (m?.meta.approval) updateMessageMeta(m.id, { approval: { ...m.meta.approval, status: "denied" } });
+  }
+
+  if (/^\/auto(\s|$)/i.test(trimmed) && !isGroupThread(thread)) {
+    const msg = insertMessage({ thread, agentId: null, role: "user", content: text });
+    const reply = handleAutoCommand(thread.slice(2), thread, trimmed);
+    if (reply) insertMessage({ thread, agentId: thread.slice(2), role: "event", content: reply });
+    return msg;
   }
 
   const responders = respondersFor(thread, trimmed);
@@ -432,6 +442,7 @@ function systemPrompt(agent: Agent, thread: string): string {
     "",
     "How to work:",
     "- Talk like a capable colleague in chat. Short, plain, direct. Markdown only when it helps.",
+    "- Adding help: spawn makes a TEMPORARY worker for one task. It never appears in the agent list and is deleted when done. agent_create makes a PERMANENT agent that joins the user's agent list with its own chat and memory. If the user wants an agent they can keep, talk to, or see in the list, use agent_create. Do not use skill_save as a substitute for creating an agent.",
     "- Tools that send, spend, delete, or post pause for the user's approval on their own. Just call them; do not ask for permission in text first.",
     "- Your screen is a real browser. Use screen_read to see it. The user can watch it live.",
     "- Keep short durable notes with memory_add: preferences, facts, where things are. Not task logs.",
@@ -512,7 +523,8 @@ export function buildPrompt(agent: Agent, thread: string): ChatMsg[] {
 // ---------- workers ----------
 
 function finishWorker(worker: Agent, result: TurnResult) {
-  if (!getAgent(worker.id)) return;
+  // Someone may have kept it as a permanent agent while it ran. Then it stays.
+  if (getAgent(worker.id)?.kind !== "worker") return;
   const parent = worker.parentThread;
   if (parent) {
     if (result.status === "done") {

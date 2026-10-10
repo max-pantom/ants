@@ -21,6 +21,7 @@ const { initSkills } = await import("./skills.js");
 const { initLoop } = await import("./loop.js");
 const { registerCoreTools, DEFAULT_AGENT_TOOLS } = await import("./tools/core.js");
 const { loadPlugins } = await import("./tools/registry.js");
+const { initConnectors, shutdownConnectors } = await import("./mcp.js");
 const { scheduleRoutines } = await import("./routines.js");
 const { hostId } = await import("./providers/chatgpt.js");
 const { createApp } = await import("./app.js");
@@ -61,6 +62,11 @@ if (db.listAgents().length === 0) {
   });
 }
 
+// Agents that could already spawn workers can also create permanent agents. Each one still asks first.
+for (const a of db.listAgents()) {
+  if (a.tools.includes("spawn") && !a.tools.includes("agent_create")) db.updateAgent(a.id, { tools: [...a.tools, "agent_create"] });
+}
+
 const { launchToken, setupCode } = initAuth(cfg.mode);
 initScreens({ dataDir: cfg.dataDir, headful: cfg.headful });
 initSkills(cfg.dataDir);
@@ -68,6 +74,7 @@ initLoop({ workspace: p.workspace, forbidden: [p.secrets, p.db] });
 registerCoreTools();
 await loadPlugins({ builtinDir: path.join(cfg.appRoot, "plugins"), hostDir: p.hostPlugins, agentsDir: p.agents });
 scheduleRoutines();
+void initConnectors();
 
 const app = createApp(cfg);
 const server = serve({ fetch: app.fetch, hostname: cfg.host, port: cfg.port }, () => {
@@ -104,6 +111,7 @@ async function shutdown() {
   closing = true;
   log.info("shutting down");
   await shutdownScreens();
+  await shutdownConnectors();
   server.close();
   process.exit(0);
 }
