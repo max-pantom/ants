@@ -45,6 +45,10 @@ export function startMockModel(port: number) {
       else if (/open (\S+) on screen/.test(t)) out = call("screen_open", { url: /open (\S+) on screen/.exec(t)![1] });
       else if (/click (.+) on screen/.test(t)) out = call("screen_click", { text: /click (.+) on screen/.exec(t)![1] });
       else if (/take a screenshot/.test(t)) out = call("screen_capture", {});
+      else if (/create agent (\w+)/.test(t)) out = call("agent_create", { name: /create agent (\w+)/.exec(t)![1], role: "Keeps the test notes." });
+      else if (/Keep going toward the goal/.test(t)) out = call("goal_finish", { status: "done", summary: "all done" });
+      else if (/mcp echo (\S+)/.test(t)) out = call("mcp_fake_echo", { text: /mcp echo (\S+)/.exec(t)![1] });
+      else if (/mcp send (\S+)/.test(t)) out = call("mcp_fake_send", { to: /mcp send (\S+)/.exec(t)![1] });
       else if (/greet/.test(t)) out = call("hello_greet", { name: "tester" });
       else if (/call secret/.test(t)) out = call("hello_secret", {});
       else out = { text: `${me} heard: ${t.slice(0, 200)}` };

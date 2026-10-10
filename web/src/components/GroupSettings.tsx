@@ -44,7 +44,7 @@ function GroupEditor({ g, state }: { g: Group; state: AppState }) {
           {state.agents.map((a) => (
             <label key={a.id} className={`pick ${members.includes(a.id) ? "on" : ""}`}>
               <input type="checkbox" checked={members.includes(a.id)} onChange={() => toggle(a.id)} />
-              <Avatar name={a.name} size={22} kind={a.kind} />
+              <Avatar agent={a} size={22} />
               <span>{a.name}</span>
               {members.includes(a.id) && <span className="muted small">#{members.indexOf(a.id) + 1}</span>}
             </label>

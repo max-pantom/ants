@@ -254,3 +254,87 @@ test("skills save, run by /name, and copy with the template but memory does not"
   assert.equal(d.memories.length, 0);
   assert.equal((await messages(`a:${copy.id}`)).length, 0);
 });
+
+test("an MCP connector's tools register, read-only runs, the rest asks, secrets stay out of settings", async () => {
+  const fake = path.resolve(import.meta.dirname, "fake-mcp.ts");
+  await api("POST", "/api/connectors", {
+    name: "Fake",
+    transport: "stdio",
+    command: process.execPath,
+    args: ["--import", "tsx", fake],
+    env: { FAKE_TOKEN: "tok-MCP-SECRET-98765" },
+  });
+  const conn = await waitFor(async () => {
+    const c = (await api("GET", "/api/connectors")).connectors.find((x: any) => x.id === "fake");
+    return c?.status.state === "connected" ? c : c?.status.state === "error" ? Promise.reject(new Error(c.status.error)) : false;
+  }, 20000);
+  assert.deepEqual(conn.status.tools.map((t: any) => [t.name, t.readOnly]).sort(), [["mcp_fake_echo", true], ["mcp_fake_send", false]]);
+  assert.deepEqual(conn.envKeys, ["FAKE_TOKEN"]);
+  assert.ok(!JSON.stringify(await api("GET", "/api/connectors")).includes("tok-MCP-SECRET-98765"), "connector secret leaked to the API");
+
+  const ada = await byName("Ada");
+  const t = `a:${ada.id}`;
+  await api("PATCH", `/api/agents/${ada.id}`, { tools: [...ada.tools, "mcp_fake_echo", "mcp_fake_send"] });
+
+  await say(t, "mcp echo hi", (m) => /Ada got: echo:hi/.test(m.content));
+
+  await api("POST", `/api/threads/${t}/messages`, { text: "mcp send bob" });
+  const ap = await waitFor(async () => (await messages(t)).find((m) => m.role === "approval" && m.meta.approval.status === "pending" && /mcp_fake_send/.test(m.meta.approval.tool)));
+  await api("POST", `/api/approvals/${ap.meta.approvalId}`, { decision: "approved" });
+  const done = await waitFor(async () => (await messages(t)).find((m) => m.role === "assistant" && /sent to bob/.test(m.content)));
+  assert.ok(!done.content.includes("tok-MCP-SECRET-98765"), "secret reached the transcript");
+  assert.match(done.content, /\[redacted\]/);
+
+  await api("DELETE", "/api/connectors/fake");
+  assert.deepEqual((await api("GET", "/api/connectors")).connectors, []);
+});
+
+test("/auto keeps an agent working across turns until it finishes, and /auto stop ends a run", async () => {
+  const bea = await byName("Bea");
+  const t = `a:${bea.id}`;
+  await api("POST", `/api/threads/${t}/messages`, { text: "/auto two steps please" });
+  const end = await waitFor(async () => (await messages(t)).find((m) => m.role === "event" && /finished the goal: all done/.test(m.content)), 15000);
+  assert.ok(end);
+  const msgs = await messages(t);
+  assert.ok(msgs.some((m) => m.role === "user" && m.meta.autonomous && /^Goal: two steps please/.test(m.content)));
+  assert.ok(msgs.some((m) => m.role === "user" && m.meta.autonomous && /^Keep going/.test(m.content)));
+  assert.ok(((await agents()).find((a) => a.name === "Bea")).tools.includes("goal_finish"));
+
+  await api("POST", `/api/threads/${t}/messages`, { text: "/auto stop" });
+  await waitFor(async () => (await messages(t)).find((m) => m.role === "event" && /isn't running a goal/.test(m.content)));
+});
+
+test("agent pictures: a built-in ant, a rejected bad value, and an uploaded image", async () => {
+  const bea = await byName("Bea");
+  assert.equal(bea.avatar, null);
+  const set = await api("PATCH", `/api/agents/${bea.id}`, { avatar: "ant:green:#ffeedd" });
+  assert.equal(set.avatar, "ant:green:#ffeedd");
+  await assert.rejects(api("PATCH", `/api/agents/${bea.id}`, { avatar: "ant:pink" }), /400/);
+  await assert.rejects(api("PATCH", `/api/agents/${bea.id}`, { avatar: "img:123" }), /400/, "img: needs an upload first");
+
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
+  const bad = await fetch(`${base}/api/agents/${bea.id}/avatar`, { method: "PUT", headers: { cookie, "content-type": "text/html" }, body: "<script>" });
+  assert.equal(bad.status, 400);
+  const up = await fetch(`${base}/api/agents/${bea.id}/avatar`, { method: "PUT", headers: { cookie, "content-type": "image/png" }, body: png });
+  assert.equal(up.status, 200);
+  assert.match((await up.json() as any).avatar, /^img:\d+$/);
+  const got = await fetch(`${base}/api/agents/${bea.id}/avatar`, { headers: { cookie } });
+  assert.equal(got.headers.get("content-type"), "image/png");
+  assert.deepEqual(Buffer.from(await got.arrayBuffer()), png);
+  await api("PATCH", `/api/agents/${bea.id}`, { avatar: null });
+});
+
+test("agent_create asks first, then adds a permanent agent to the list; spawn workers do not appear there", async () => {
+  const ada = await byName("Ada");
+  const t = `a:${ada.id}`;
+  await api("PATCH", `/api/agents/${ada.id}`, { tools: [...new Set([...ada.tools, "agent_create"])] });
+  await api("POST", `/api/threads/${t}/messages`, { text: "create agent Zed" });
+  const ap = await waitFor(async () => (await messages(t)).find((m) => m.role === "approval" && m.meta.approval.status === "pending" && m.meta.approval.tool === "agent_create"));
+  assert.ok(!(await agents()).some((a) => a.name === "Zed"), "created before approval");
+  await api("POST", `/api/approvals/${ap.meta.approvalId}`, { decision: "approved" });
+  const zed = await waitFor(async () => (await agents()).find((a) => a.name === "Zed"));
+  assert.equal(zed.kind, "agent");
+  assert.ok(zed.tools.includes("files_read"));
+  assert.ok(!zed.tools.includes("spawn") && !zed.tools.includes("agent_create"));
+  assert.equal(((await api("GET", "/api/state")).workers as any[]).length, 0);
+});

@@ -43,11 +43,19 @@ export class ProviderError extends Error {
   }
 }
 
-export type ProviderId = "openai" | "xai" | "compat" | "chatgpt";
+export type PresetId = "anthropic" | "gemini" | "openrouter" | "groq" | "mistral" | "deepseek" | "together";
+export type ProviderId = "openai" | "xai" | "compat" | "chatgpt" | PresetId;
 
 export const PROVIDERS: { id: ProviderId; label: string }[] = [
   { id: "openai", label: "OpenAI (API key)" },
   { id: "xai", label: "xAI / Grok" },
   { id: "compat", label: "OpenAI-compatible" },
   { id: "chatgpt", label: "ChatGPT plan (official preview)" },
+  { id: "anthropic", label: "Anthropic (Claude)" },
+  { id: "gemini", label: "Google Gemini" },
+  { id: "openrouter", label: "OpenRouter" },
+  { id: "groq", label: "Groq" },
+  { id: "mistral", label: "Mistral" },
+  { id: "deepseek", label: "DeepSeek" },
+  { id: "together", label: "Together AI" },
 ];

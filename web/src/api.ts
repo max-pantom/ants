@@ -13,6 +13,7 @@ export interface Meta {
   from?: { id: string; name: string };
   skill?: string;
   routine?: boolean;
+  autonomous?: boolean;
   image?: string;
   screen?: boolean;
   error?: boolean;
@@ -37,6 +38,9 @@ export interface Agent {
   kind: "agent" | "coordinator" | "worker";
   provider: string | null;
   model: string | null;
+  avatar: string | null;
+  parentThread?: string | null;
+  deadline?: number | null;
   tools: string[];
   spendCap: number;
   resolved: { provider: string; model: string } | null;
@@ -53,6 +57,7 @@ export interface Group {
 export interface AppState {
   mode: "local" | "server";
   agents: Agent[];
+  workers: Agent[];
   groups: Group[];
   lastIds: Record<string, number>;
   pending: string[];
@@ -84,7 +89,8 @@ export interface Settings {
     default: { provider: string | null; model: string | null };
   };
   catalog: { id: string; label: string }[];
-  keys: { openai: string | null; xai: string | null; compat: string | null };
+  keys: Record<string, string | null>;
+  presets: { id: string; label: string; baseUrl: string; keyUrl: string }[];
   available: Record<string, boolean>;
   chatgpt: { signedIn: boolean; email?: string; planUsage?: boolean; clientId?: string; hostId: string; importedFromOtherHost?: boolean };
   xai: {
@@ -94,6 +100,7 @@ export interface Settings {
     rejected: string | null;
   };
   xaiClientId: string | null;
+  defaultSpendCap: number;
   privacy: {
     mode: "fully-local" | "self-hosted" | "hybrid";
     encryptionAtRest: boolean;
@@ -155,3 +162,29 @@ export const post = <T = any>(p: string, b: unknown = {}) => api<T>("POST", p, b
 export const put = <T = any>(p: string, b: unknown) => api<T>("PUT", p, b);
 export const patch = <T = any>(p: string, b: unknown) => api<T>("PATCH", p, b);
 export const del = <T = any>(p: string) => api<T>("DELETE", p);
+
+export interface Connector {
+  id: string;
+  name: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  url?: string;
+  enabled: boolean;
+  readOnlyWithoutAsking: boolean;
+  status: { state: "connecting" | "connected" | "error" | "disabled"; error?: string; tools: { name: string; description: string; readOnly: boolean }[] };
+  envKeys: string[];
+  headerKeys: string[];
+}
+
+export interface ConnectorTemplate {
+  id: string;
+  name: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: readonly string[];
+  url?: string;
+  env?: readonly string[];
+  headers?: readonly string[];
+  note: string;
+}

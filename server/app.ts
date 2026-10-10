@@ -14,9 +14,11 @@ import { watchScreen, hasScreen, closeScreen, VIEWPORT } from "./screen.js";
 import { listPlugins, loadedToolsFor, loadPlugins } from "./tools/registry.js";
 import { DEFAULT_AGENT_TOOLS, DEFAULT_COORDINATOR_TOOLS } from "./tools/core.js";
 import { writeSecret, deleteSecret, secretNames } from "./secrets.js";
+import { PRESETS } from "./providers/presets.js";
 import { availability, clientFor, keyOf, providerSettings, resolveModel, PROVIDERS, ProviderError, type ProviderId } from "./providers/index.js";
 import { chatgptStatus, chatgptLogout, startChatGPTLogin, finishChatGPTLogin } from "./providers/chatgpt.js";
 import { xaiStatus, xaiLogout, startXaiLogin } from "./providers/xai-device.js";
+import { addConnector, removeConnector, reconnectConnector, setConnectorEnabled, listConnectors, CONNECTOR_TEMPLATES } from "./mcp.js";
 import { log } from "./log.js";
 import { assertOutbound, privacyMode, setPrivacyMode, type PrivacyMode } from "./privacy.js";
 
@@ -83,6 +85,8 @@ export function createApp(cfg: Config) {
     c.json({
       mode: cfg.mode,
       agents: db.listAgents().map(agentView),
+      // Temporary workers a coordinator spawned. They have no chat of their own and vanish when done.
+      workers: db.listAgents(true).filter((a) => a.kind === "worker").map(agentView),
       groups: db.listGroups(),
       lastIds: db.lastMessageIds(),
       pending: db.pendingApprovals({}).map((a) => a.thread),
@@ -132,7 +136,34 @@ export function createApp(cfg: Config) {
       patch.tools = b.tools.map(String).filter((t: string) => loaded.has(t));
     }
     if (b.spendCap !== undefined) patch.spendCap = Math.max(0, Math.min(10000, Number(b.spendCap) || 0));
+    if (b.avatar !== undefined) {
+      const v = b.avatar === null || b.avatar === "" ? null : String(b.avatar);
+      if (v !== null && !/^ant:(green|red|purple|blue)(:#[0-9a-fA-F]{6})?$/.test(v) && !(/^img:\d{1,13}$/.test(v) && fs.existsSync(avatarFile(a.id)))) return bad(c, "Unknown avatar.");
+      patch.avatar = v;
+    }
     return c.json(agentView(db.updateAgent(a.id, patch)));
+  });
+
+  // A picture the user uploads for an agent. Stored beside the agent's other files.
+  const avatarFile = (id: string) => path.join(p.agent(id), "avatar.img");
+  const AVATAR_TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+  app.put("/api/agents/:id/avatar", async (c) => {
+    const a = db.getAgent(c.req.param("id"));
+    if (!a || a.kind === "worker") return bad(c, "No such agent.", 404);
+    const type = (c.req.header("content-type") ?? "").split(";")[0].trim();
+    if (!AVATAR_TYPES[type]) return bad(c, "Use a PNG, JPEG or WebP picture.");
+    const buf = Buffer.from(await c.req.arrayBuffer());
+    if (!buf.length || buf.length > 1_000_000) return bad(c, "Pictures can be up to 1 MB.");
+    fs.mkdirSync(p.agent(a.id), { recursive: true });
+    fs.writeFileSync(avatarFile(a.id), buf);
+    fs.writeFileSync(`${avatarFile(a.id)}.type`, type);
+    return c.json(agentView(db.updateAgent(a.id, { avatar: `img:${Date.now()}` })));
+  });
+  app.get("/api/agents/:id/avatar", (c) => {
+    const id = c.req.param("id");
+    if (!/^[a-z0-9]+$/.test(id) || !fs.existsSync(avatarFile(id))) return bad(c, "gone", 404);
+    const type = fs.existsSync(`${avatarFile(id)}.type`) ? fs.readFileSync(`${avatarFile(id)}.type`, "utf8") : "image/png";
+    return c.body(fs.readFileSync(avatarFile(id)), 200, { "content-type": type, "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff" });
   });
 
   app.delete("/api/agents/:id", async (c) => {
@@ -147,6 +178,12 @@ export function createApp(cfg: Config) {
   });
 
   // Copy as template: role, skills, routine, plugins, allowlist. Never transcript or memory.
+  // Turn a running temporary worker into a permanent agent in the main list.
+  app.post("/api/workers/:id/promote", (c) => {
+    const a = db.promoteWorker(c.req.param("id"));
+    return a ? c.json(agentView(a)) : bad(c, "That worker has already finished.", 404);
+  });
+
   app.post("/api/agents/:id/copy", async (c) => {
     const a = db.getAgent(c.req.param("id"));
     if (!a || a.kind === "worker") return bad(c, "No such agent.", 404);
@@ -348,11 +385,18 @@ export function createApp(cfg: Config) {
       workspace: p.workspace,
       providers: providerSettings(),
       catalog: PROVIDERS,
-      keys: { openai: mask(keyOf("openai")), xai: mask(keyOf("xai")), compat: mask(keyOf("compat")) },
+      keys: {
+        openai: mask(keyOf("openai")),
+        xai: mask(keyOf("xai")),
+        compat: mask(keyOf("compat")),
+        ...Object.fromEntries(PRESETS.map((x) => [x.id, mask(keyOf(x.id))])),
+      },
+      presets: PRESETS,
       available: availability(),
       chatgpt: chatgptStatus(),
       xai: xaiStatus(),
       xaiClientId: db.getSetting<string | null>("xaiClientId", null),
+      defaultSpendCap: db.getSetting<number>("defaultSpendCap", 40),
       privacy: {
         mode: privacyMode(),
         encryptionAtRest: false,
@@ -424,9 +468,19 @@ export function createApp(cfg: Config) {
     return c.json({ ok: true });
   });
 
+  // Local safety cap on ChatGPT plan calls per agent per day. Raise it here, or per agent under Agents.
+  app.put("/api/settings/spend-cap", async (c) => {
+    const b = await c.req.json();
+    const cap = Math.max(0, Math.min(10000, Math.floor(Number(b.cap) || 0)));
+    db.setSetting("defaultSpendCap", cap);
+    if (b.applyToAll) for (const a of db.listAgents()) db.updateAgent(a.id, { spendCap: cap });
+    bus.send({ type: "agents" });
+    return c.json({ ok: true, cap });
+  });
+
   app.put("/api/keys/:provider", async (c) => {
     const prov = c.req.param("provider");
-    if (!["openai", "xai", "compat"].includes(prov)) return bad(c, "unknown provider");
+    if (!["openai", "xai", "compat", ...PRESETS.map((x) => x.id)].includes(prov)) return bad(c, "unknown provider");
     const { key } = await c.req.json();
     const k = String(key ?? "").trim();
     if (k) writeSecret(`${prov}-key`, { key: k });
@@ -487,6 +541,38 @@ export function createApp(cfg: Config) {
     return c.json({ ok: true });
   });
 
+  // ---------- connectors (MCP) ----------
+
+  app.get("/api/connectors", (c) => c.json({ connectors: listConnectors(), templates: CONNECTOR_TEMPLATES }));
+  app.post("/api/connectors", async (c) => {
+    try {
+      await addConnector(await c.req.json());
+      return c.json({ connectors: listConnectors() });
+    } catch (e: any) {
+      return bad(c, e.message);
+    }
+  });
+  app.patch("/api/connectors/:id", async (c) => {
+    try {
+      await setConnectorEnabled(c.req.param("id"), !!(await c.req.json()).enabled);
+      return c.json({ connectors: listConnectors() });
+    } catch (e: any) {
+      return bad(c, e.message);
+    }
+  });
+  app.post("/api/connectors/:id/reconnect", async (c) => {
+    try {
+      await reconnectConnector(c.req.param("id"));
+      return c.json({ connectors: listConnectors() });
+    } catch (e: any) {
+      return bad(c, e.message);
+    }
+  });
+  app.delete("/api/connectors/:id", async (c) => {
+    await removeConnector(c.req.param("id"));
+    return c.json({ connectors: listConnectors() });
+  });
+
   // ---------- plugins ----------
 
   app.get("/api/plugins", (c) => c.json({ plugins: listPlugins() }));
@@ -538,6 +624,7 @@ export function createApp(cfg: Config) {
   const webDir = path.join(cfg.appRoot, "dist", "web");
   if (fs.existsSync(webDir)) {
     app.use("/assets/*", serveStatic({ root: path.relative(process.cwd(), webDir) }));
+    app.use("/ants/*", serveStatic({ root: path.relative(process.cwd(), webDir) }));
     app.get("/favicon.svg", serveStatic({ path: path.relative(process.cwd(), path.join(webDir, "favicon.svg")) }));
     const index = fs.readFileSync(path.join(webDir, "index.html"), "utf8");
     app.get("*", (c) => (c.req.path.startsWith("/api/") ? bad(c, "not found", 404) : c.html(index)));

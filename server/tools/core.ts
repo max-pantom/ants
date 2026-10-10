@@ -1,12 +1,13 @@
 // Tools that need the host itself: memory, skills, the screen, and the team tools.
 // They register through the same registry as folder plugins and obey the same allowlist.
 import { registerCorePlugin, allToolNames } from "./registry.js";
-import { addMemory, deleteMemory, listMemories, createAgent, getGroup, findAgentByName, type Agent } from "../db.js";
+import { addMemory, deleteMemory, listMemories, createAgent, getGroup, findAgentByName, listAgents, type Agent } from "../db.js";
 import { listSkills, getSkill, saveSkill } from "../skills.js";
 import { screenTools } from "../screen.js";
+import { finishGoal, goalFor } from "../autonomy.js";
 import { agentSays, agentThread, isGroupThread, runTurn } from "../loop.js";
 
-export const TEAM_TOOLS = ["handoff", "message_agent", "spawn"];
+export const TEAM_TOOLS = ["handoff", "message_agent", "spawn", "agent_create"];
 
 function target(from: Agent, name: string): Agent {
   const a = findAgentByName(name);
@@ -16,6 +17,22 @@ function target(from: Agent, name: string): Agent {
 }
 
 export function registerCoreTools() {
+  registerCorePlugin("goal", "Lets an agent end an autonomous run (/auto) with a summary.", [
+    {
+      name: "goal_finish",
+      description: "Call this when the goal you were given with /auto is finished, or you are stuck and cannot go further. Include a short summary of what you did or what is blocking you.",
+      parameters: {
+        type: "object",
+        properties: { status: { type: "string", enum: ["done", "blocked"] }, summary: { type: "string" } },
+        required: ["status", "summary"],
+      },
+      async run({ status, summary }, ctx) {
+        if (!goalFor(ctx.agent.id)) return "There is no autonomous goal running; just reply normally.";
+        return finishGoal(ctx.agent.id, status === "blocked" ? "blocked" : "done", String(summary).slice(0, 500));
+      },
+    },
+  ]);
+
   registerCorePlugin("memory", "A short list of notes the agent keeps about the user and its work.", [
     {
       name: "memory_add",
@@ -133,9 +150,51 @@ export function registerCoreTools() {
       },
     },
     {
+      name: "agent_create",
+      description:
+        "Create a PERMANENT agent. It joins the user's agent list with its own chat, memory, skills and screen, and stays until the user deletes it. Use this when the user wants an agent they can keep and talk to. For a one-off task use spawn instead. The user is asked to approve first.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Short and unique, letters and numbers" },
+          role: { type: "string", description: "One or two sentences: what this agent is for" },
+          tools: { type: "array", items: { type: "string" }, description: "Tool names it may use. Omit for the standard set." },
+          task: { type: "string", description: "Optional first job. It starts working on it in its own chat." },
+        },
+        required: ["name", "role"],
+      },
+      gate: true,
+      async run({ name, role, tools, task }, ctx) {
+        const clean = String(name ?? "").trim().slice(0, 40);
+        if (!clean || !String(role ?? "").trim()) throw new Error("An agent needs a name and a role.");
+        if (!/^[\p{L}\p{N} _.-]+$/u.test(clean)) throw new Error("Use letters, numbers, spaces, dots, dashes in the name.");
+        if (listAgents(true).some((a) => a.name.toLowerCase() === clean.toLowerCase())) throw new Error(`There is already an agent called ${clean}.`);
+        const loaded = new Set(allToolNames());
+        const explicit = Array.isArray(tools) && tools.length;
+        const wanted: string[] = explicit ? tools.map(String) : DEFAULT_AGENT_TOOLS;
+        // A new agent can't be handed the power to spawn or create more agents.
+        const bad = explicit ? wanted.filter((t) => !loaded.has(t) || t === "spawn" || t === "agent_create") : [];
+        if (bad.length) throw new Error(`Not available: ${bad.join(", ")}. Choose from: ${[...loaded].filter((t) => t !== "spawn" && t !== "agent_create").join(", ")}`);
+        const created = createAgent({
+          kind: "agent",
+          name: clean,
+          role: String(role).slice(0, 400),
+          description: "",
+          provider: ctx.agent.provider,
+          model: ctx.agent.model,
+          tools: wanted.filter((t) => loaded.has(t)),
+          spendCap: ctx.agent.spendCap,
+        });
+        const t = agentThread(created.id);
+        agentSays(ctx.agent, t, `Hi ${created.name}. ${ctx.agent.name} set you up. ${created.role}${task ? `\n\nFirst job: ${String(task)}` : ""}`);
+        if (task) void runTurn(created.id, t);
+        return `Created ${created.name}. It is now in the agent list with its own chat.${task ? " It is working on the first job there." : ""}`;
+      },
+    },
+    {
       name: "spawn",
       description:
-        "Start a temporary worker for one bounded task, with an explicit tool list and a deadline. Waits for its result. The worker's transcript is deleted when it finishes.",
+        "Start a TEMPORARY worker for one bounded task, with an explicit tool list and a deadline. Waits for its result. It does not join the user's agent list and its transcript is deleted when it finishes. For a lasting agent the user can keep, use agent_create instead.",
       parameters: {
         type: "object",
         properties: {
@@ -201,6 +260,7 @@ export const DEFAULT_AGENT_TOOLS = [
   "screen_capture",
   "handoff",
   "message_agent",
+  "goal_finish",
 ];
 
 // The coordinator routes. It does not get shell.
@@ -208,6 +268,7 @@ export const DEFAULT_COORDINATOR_TOOLS = [
   "handoff",
   "message_agent",
   "spawn",
+  "agent_create",
   "memory_add",
   "memory_forget",
   "memory_list",

@@ -20,6 +20,8 @@ export interface Agent {
   model: string | null;
   tools: string[];
   spendCap: number;
+  /** `ant:<colour>[:#rrggbb]` for a built-in ant, `img:<n>` for an uploaded picture, null for the default. */
+  avatar: string | null;
   parentThread: string | null;
   deadline: number | null;
   createdAt: number;
@@ -45,6 +47,8 @@ export interface MessageMeta {
   from?: { id: string; name: string };
   skill?: string;
   routine?: boolean;
+  /** Written by the host while an agent works on a /auto goal. */
+  autonomous?: boolean;
   image?: string;
   screen?: boolean;
   error?: boolean;
@@ -199,6 +203,11 @@ export function openDb(file: string) {
     );
     CREATE INDEX IF NOT EXISTS audit_created ON audit_events(created_at DESC);
   `);
+
+  // Added after the first release: older databases get the column on open.
+  try {
+    db.exec("ALTER TABLE agents ADD COLUMN avatar TEXT");
+  } catch {}
 }
 
 export const newId = () => crypto.randomBytes(6).toString("hex");
@@ -248,7 +257,7 @@ export function exportPortable() {
   return {
     version: 1,
     exportedAt: new Date().toISOString(),
-    agents: db.prepare("SELECT id, name, role, description, kind, provider, model, tools, spend_cap AS spendCap, created_at AS createdAt FROM agents WHERE kind != 'worker' ORDER BY created_at").all(),
+    agents: db.prepare("SELECT id, name, role, description, kind, provider, model, tools, spend_cap AS spendCap, avatar, created_at AS createdAt FROM agents WHERE kind != 'worker' ORDER BY created_at").all(),
     messages: db.prepare("SELECT thread, agent_id AS agentId, role, content, meta, created_at AS createdAt FROM messages ORDER BY id").all(),
     memories: db.prepare("SELECT agent_id AS agentId, text, created_at AS createdAt FROM memories ORDER BY id").all(),
     routines: db.prepare("SELECT agent_id AS agentId, cron, skill, instruction, enabled, last_run_at AS lastRunAt FROM routines").all(),
@@ -285,6 +294,7 @@ function rowToAgent(r: any): Agent {
     model: r.model,
     tools: JSON.parse(r.tools),
     spendCap: r.spend_cap,
+    avatar: r.avatar ?? null,
     parentThread: r.parent_thread,
     deadline: r.deadline,
     createdAt: r.created_at,
@@ -322,12 +332,12 @@ export function createAgent(a: Partial<Agent> & { name: string; role: string }):
     a.provider ?? null,
     a.model ?? null,
     JSON.stringify(a.tools ?? []),
-    a.spendCap ?? 40,
+    a.spendCap ?? getSetting<number>("defaultSpendCap", 40),
     a.parentThread ?? null,
     a.deadline ?? null,
     now(),
   );
-  if (a.kind !== "worker") bus.send({ type: "agents" });
+  bus.send({ type: "agents" });
   return getAgent(id)!;
 }
 
@@ -336,8 +346,20 @@ export function updateAgent(id: string, patch: Partial<Agent>) {
   if (!cur) throw new Error("no such agent");
   const next = { ...cur, ...patch };
   db.prepare(
-    `UPDATE agents SET name = ?, role = ?, description = ?, provider = ?, model = ?, tools = ?, spend_cap = ? WHERE id = ?`,
-  ).run(next.name, next.role, next.description, next.provider, next.model, JSON.stringify(next.tools), next.spendCap, id);
+    `UPDATE agents SET name = ?, role = ?, description = ?, provider = ?, model = ?, tools = ?, spend_cap = ?, avatar = ? WHERE id = ?`,
+  ).run(next.name, next.role, next.description, next.provider, next.model, JSON.stringify(next.tools), next.spendCap, next.avatar ?? null, id);
+  bus.send({ type: "agents" });
+  return getAgent(id)!;
+}
+
+/** A running worker becomes a normal agent: it keeps its chat and tools and stops being deleted. */
+export function promoteWorker(id: string) {
+  const a = getAgent(id);
+  if (!a || a.kind !== "worker") return undefined;
+  db.prepare("UPDATE agents SET kind = 'agent', parent_thread = NULL, deadline = NULL, role = ? WHERE id = ?").run(
+    "Kept from a temporary worker. Edit this role in Settings → Agents.",
+    id,
+  );
   bus.send({ type: "agents" });
   return getAgent(id)!;
 }
@@ -346,7 +368,7 @@ export function deleteAgent(id: string) {
   const a = getAgent(id);
   db.prepare("DELETE FROM messages WHERE thread = ?").run(`a:${id}`);
   db.prepare("DELETE FROM agents WHERE id = ?").run(id);
-  if (a?.kind !== "worker") bus.send({ type: "agents" });
+  bus.send({ type: "agents" });
 }
 
 export function expiredWorkers(): Agent[] {

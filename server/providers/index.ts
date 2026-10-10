@@ -4,7 +4,8 @@ import { CompatClient } from "./openai-compat.js";
 import { ResponsesClient } from "./responses.js";
 import { CHATGPT_API, chatgptAuth, chatgptToken, explainChatGPTError } from "./chatgpt.js";
 import { markXaiRejected, xaiAuth, xaiOauthToken } from "./xai-device.js";
-import { ProviderError, type ModelClient, type ModelRequest, type ProviderId } from "./types.js";
+import { PRESETS, presetById } from "./presets.js";
+import { ProviderError, type ModelClient, type ModelRequest, type PresetId, type ProviderId } from "./types.js";
 
 export * from "./types.js";
 
@@ -32,11 +33,13 @@ export function providerSettings(): ProviderSettings {
   };
 }
 
-export const keyOf = (p: "openai" | "xai" | "compat") => readSecret<{ key: string }>(`${p}-key`)?.key;
+export const keyOf = (p: string) => readSecret<{ key: string }>(`${p}-key`)?.key;
 
 /** Which ways in are usable right now. */
 export function availability(): Record<ProviderId, boolean> {
+  const presets = Object.fromEntries(PRESETS.map((p) => [p.id, !!keyOf(p.id)])) as Record<PresetId, boolean>;
   return {
+    ...presets,
     openai: !!keyOf("openai"),
     xai: !!keyOf("xai") || !!xaiAuth(),
     // A local server usually needs no key, so the compatible provider is always offered.
@@ -108,8 +111,19 @@ export function clientFor(provider: ProviderId): ModelClient {
       return new CompatClient({ baseUrl: s.compat.baseUrl, label: s.compat.label || "Compatible endpoint", token: async () => keyOf("compat") });
     case "chatgpt":
       return new ResponsesClient({ baseUrl: CHATGPT_API, label: "ChatGPT", token: chatgptToken, explain: explainChatGPTError });
-    default:
-      throw new ProviderError(`Unknown provider ${provider}`);
+    default: {
+      const preset = presetById(provider);
+      if (!preset) throw new ProviderError(`Unknown provider ${provider}`);
+      return new CompatClient({
+        baseUrl: preset.baseUrl,
+        label: preset.label,
+        token: async () => {
+          const k = keyOf(preset.id);
+          if (!k) throw new ProviderError(`No ${preset.label} API key. Add one in Settings.`);
+          return k;
+        },
+      });
+    }
   }
 }
 

@@ -17,7 +17,7 @@ interface Props {
   isGroup: boolean;
 }
 
-export function Transcript({ messages, agents, drafts, busy, hasMore, onLoadOlder, onOpenScreen, isGroup }: Props) {
+export function Transcript({ thread, messages, agents, drafts, busy, hasMore, onLoadOlder, onOpenScreen, isGroup }: Props) {
   const results = useMemo(() => {
     const m = new Map<string, Message>();
     for (const x of messages ?? []) if (x.role === "tool" && x.meta.toolCallId) m.set(x.meta.toolCallId, x);
@@ -39,7 +39,9 @@ export function Transcript({ messages, agents, drafts, busy, hasMore, onLoadOlde
         )}
         {messages && visible.length === 0 && busy.length === 0 && (
           <div className="transcript-empty">
-            <p>{isGroup ? "Say something to the group. Use @name to pick who answers." : "Say something. Setup is a message, not a form."}</p>
+            {!isGroup && agentById(thread.slice(2)) && <Avatar agent={agentById(thread.slice(2))!} size={112} walking />}
+            <p className="greeting">What's on your mind?</p>
+            <p>{isGroup ? "Say something to the group. Use @name to pick who answers." : "Message it like a colleague. Setup is a message, not a form."}</p>
           </div>
         )}
         {visible.map((m, i) => {
@@ -61,7 +63,7 @@ export function Transcript({ messages, agents, drafts, busy, hasMore, onLoadOlde
         {busy.map((a) =>
           drafts[a.id] ? (
             <div key={a.id} className="msg agent">
-              <Avatar name={a.name} kind={a.kind} />
+              <Avatar agent={a} />
               <div className="msg-body">
                 <div className="msg-head">
                   <span className="who">{a.name}</span>
@@ -71,7 +73,7 @@ export function Transcript({ messages, agents, drafts, busy, hasMore, onLoadOlde
             </div>
           ) : (
             <div key={a.id} className="msg agent typing">
-              <Avatar name={a.name} kind={a.kind} />
+              <Avatar agent={a} />
               <div className="dots" aria-label={`${a.name} is working`}>
                 <span />
                 <span />
@@ -147,7 +149,7 @@ function Row({
   const calls = m.meta.toolCalls ?? [];
   return (
     <div className={`msg agent ${continued ? "cont" : ""} ${m.meta.from ? "relayed" : ""}`}>
-      {continued ? <span className="avatar-gap" /> : <Avatar name={name} kind={agent?.kind} />}
+      {continued ? <span className="avatar-gap" /> : <Avatar name={name} seed={agent?.id} kind={agent?.kind} avatar={agent?.avatar} />}
       <div className="msg-body">
         {!continued && (
           <div className="msg-head">
@@ -226,7 +228,7 @@ function ApprovalCard({ m, agent }: { m: Message; agent?: Agent }) {
   return (
     <div className={`approval ${a.status}`}>
       <div className="approval-head">
-        <Avatar name={a.agentName} size={22} kind={agent?.kind} />
+        <Avatar name={a.agentName} seed={agent?.id} size={22} kind={agent?.kind} avatar={agent?.avatar} />
         <span>
           <b>{a.agentName}</b> {a.kind === "spend" ? "wants to use your ChatGPT plan allowance" : <>wants to run <code>{a.tool}</code></>}
         </span>

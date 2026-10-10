@@ -52,6 +52,11 @@ export function registerTool(t: ToolDef) {
   hostTools.set(t.name, t);
 }
 
+/** Remove every host tool a plugin registered. Used when a connector disconnects. */
+export function unregisterPlugin(plugin: string) {
+  for (const [k, t] of hostTools) if (t.plugin === plugin) hostTools.delete(k);
+}
+
 export function registerCorePlugin(name: string, description: string, tools: Omit<ToolDef, "plugin">[]) {
   for (const t of tools) registerTool({ ...t, plugin: name });
   plugins.push({ name, description, dir: null, scope: "builtin", tools: tools.map((t) => t.name) });
@@ -123,7 +128,7 @@ async function loadDir(root: string, scope: PluginInfo["scope"]) {
 export async function loadPlugins(o: { builtinDir: string; hostDir: string; agentsDir: string }) {
   // Drop folder plugins, keep core ones, so a reload picks up edits.
   for (let i = plugins.length - 1; i >= 0; i--) if (plugins[i].dir) plugins.splice(i, 1);
-  for (const [k, t] of hostTools) if (!plugins.some((p) => !p.dir && p.name === t.plugin)) hostTools.delete(k);
+  for (const [k, t] of hostTools) if (!t.plugin.startsWith("mcp:") && !plugins.some((p) => !p.dir && p.name === t.plugin)) hostTools.delete(k);
   agentTools.clear();
 
   await loadDir(o.builtinDir, "builtin");

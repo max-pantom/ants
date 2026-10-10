@@ -4,6 +4,7 @@ import { linkProps, type Route } from "../router";
 import { lastSeen } from "../util";
 import { Avatar, GroupAvatar, Icon, Logo } from "./Icons";
 import { NewAgentDialog, NewGroupDialog } from "./Dialogs";
+import { post } from "../api";
 
 export function Sidebar({ state, route, onClose }: { state: AppState; route: Route; onClose: () => void }) {
   const [dialog, setDialog] = useState<"agent" | "group" | null>(null);
@@ -32,7 +33,7 @@ export function Sidebar({ state, route, onClose }: { state: AppState; route: Rou
           const thread = `a:${a.id}`;
           return (
             <a key={a.id} className={`nav-item ${active === a.id ? "active" : ""}`} {...linkProps(`/a/${a.id}`)}>
-              <Avatar name={a.name} kind={a.kind} />
+              <Avatar agent={a} />
               <span className="nav-text">
                 <span className="nav-name">
                   {a.name}
@@ -51,6 +52,32 @@ export function Sidebar({ state, route, onClose }: { state: AppState; route: Rou
           );
         })}
       </div>
+
+      {state.workers?.length > 0 && (
+        <div className="nav-section">
+          <div className="nav-heading">Working now</div>
+          {state.workers.map((w) => {
+            const parent = w.parentThread?.startsWith("a:") ? nameOf(w.parentThread.slice(2)) : null;
+            const until = w.deadline ? new Date(w.deadline).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : null;
+            return (
+              <div key={w.id} className="nav-item static" title="A temporary worker. It has no chat of its own and is removed when it finishes.">
+                <Avatar agent={w} />
+                <span className="nav-text">
+                  <span className="nav-name">
+                    {w.name}
+                    <span className="tag">temporary</span>
+                  </span>
+                  <span className="nav-sub">{[parent && `for ${parent}`, until && `until ${until}`].filter(Boolean).join(" · ") || "working…"}</span>
+                </span>
+                <button className="btn ghost tight" title="Make it a permanent agent in your list, with its own chat" onClick={() => void post(`/api/workers/${w.id}/promote`)}>
+                  Keep
+                </button>
+                <span className="pulse" />
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="nav-section">
         <div className="nav-heading">

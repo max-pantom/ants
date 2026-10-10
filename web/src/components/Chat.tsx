@@ -127,7 +127,7 @@ export function Chat({ thread, state, onMenu }: { thread: string; state: AppStat
           <button className="icon-btn only-mobile" onClick={onMenu} aria-label="Menu">
             <Icon name="menu" />
           </button>
-          {agent ? <Avatar name={agent.name} size={32} kind={agent.kind} /> : <GroupAvatar names={members.map((m) => m.name)} size={32} />}
+          {agent ? <Avatar agent={agent} size={32} /> : <GroupAvatar names={members.map((m) => m.name)} size={32} />}
           <div className="chat-title">
             <h1>{title}</h1>
             <p>
@@ -148,7 +148,7 @@ export function Chat({ thread, state, onMenu }: { thread: string; state: AppStat
             ) : (
               members.map((m) => (
                 <button key={m.id} className={`btn ghost tight ${screenFor === m.id ? "on" : ""}`} onClick={() => setScreenFor(screenFor === m.id ? null : m.id)} title={`Watch ${m.name}'s screen`}>
-                  <Avatar name={m.name} size={18} kind={m.kind} />
+                  <Avatar agent={m} size={18} />
                   {m.screen && <span className="live-dot" />}
                 </button>
               ))
@@ -206,6 +206,7 @@ export function Chat({ thread, state, onMenu }: { thread: string; state: AppStat
           skills={skills}
           members={isGroup ? members : []}
           busy={busyHere.length > 0}
+          chip={agent ? { text: agent.resolved ? `${agent.resolved.model} · ${agent.resolved.provider}` : "No model yet", href: agent.resolved ? undefined : "/settings/models" } : undefined}
           onSend={send}
           onStop={() => busyHere.forEach((m) => void post(`/api/agents/${m.id}/stop`))}
         />

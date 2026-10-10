@@ -47,7 +47,7 @@ export function ScreenPanel({ agent, onClose }: { agent?: Agent; onClose: () => 
   return (
     <aside className="screen-panel">
       <header className="screen-head">
-        <Avatar name={agent.name} size={22} kind={agent.kind} />
+        <Avatar agent={agent} size={22} />
         <div className="screen-title">
           <b>{agent.name}'s screen</b>
           <span className={`screen-status ${on ? "live" : ""}`}>{on ? (agent.busy ? "Live · working" : "Live") : on === false ? "Off" : "Connecting…"}</span>

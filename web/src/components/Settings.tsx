@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { get, post, put, type AppState, type AuditEvent, type PluginInfo, type Settings } from "../api";
+import { del, get, patch, post, put, type AppState, type Connector, type ConnectorTemplate, type AuditEvent, type PluginInfo, type Settings } from "../api";
 import { onLive } from "../live";
 import { linkProps } from "../router";
 import { Icon } from "./Icons";
@@ -10,6 +10,7 @@ const TABS = [
   { id: "models", label: "Models" },
   { id: "agents", label: "Agents" },
   { id: "groups", label: "Groups" },
+  { id: "connectors", label: "Connectors" },
   { id: "plugins", label: "Plugins" },
   { id: "privacy", label: "Privacy" },
   { id: "machine", label: "This machine" },
@@ -71,6 +72,8 @@ export function SettingsPage({ state, tab, id, onMenu }: { state: AppState; tab:
           <AgentsTab state={state} settings={settings} id={id} />
         ) : tab === "groups" ? (
           <GroupsTab state={state} id={id} />
+        ) : tab === "connectors" ? (
+          <ConnectorsTab />
         ) : tab === "plugins" ? (
           <PluginsTab />
         ) : tab === "privacy" ? (
@@ -106,6 +109,29 @@ function ModelsTab({ s, reload }: { s: Settings; reload: () => void }) {
         <CompatRow s={s} reload={reload} />
       </section>
 
+      <section className="card">
+        <h2>More providers</h2>
+        <p className="muted">Hosted providers with their own API key. Each one is an OpenAI-compatible endpoint.</p>
+        {s.presets.map((x) => (
+          <KeyRow
+            key={x.id}
+            provider={x.id}
+            label={x.label}
+            masked={s.keys[x.id] ?? null}
+            reload={reload}
+            extra={
+              <span className="muted small">
+                {x.baseUrl} ·{" "}
+                <a href={x.keyUrl} target="_blank" rel="noreferrer">
+                  get a key
+                </a>
+              </span>
+            }
+          />
+        ))}
+      </section>
+
+      <SpendCapCard s={s} reload={reload} />
       <ChatGPTCard s={s} reload={reload} />
       <XaiCard s={s} reload={reload} />
     </div>
@@ -608,5 +634,217 @@ function MachineTab({ s }: { s: Settings }) {
         </section>
       )}
     </div>
+  );
+}
+
+function SpendCapCard({ s, reload }: { s: Settings; reload: () => void }) {
+  const [cap, setCap] = useState(String(s.defaultSpendCap));
+  const [done, setDone] = useState("");
+  const n = Math.max(0, Math.min(10000, Math.floor(Number(cap) || 0)));
+  const save = async (applyToAll: boolean) => {
+    await put("/api/settings/spend-cap", { cap: n, applyToAll });
+    setDone(applyToAll ? `Every agent now has a cap of ${n} calls a day.` : `New agents will start with ${n} calls a day.`);
+    reload();
+  };
+  return (
+    <section className="card">
+      <h2>ChatGPT plan safety cap</h2>
+      <p className="muted">
+        A local limit on plan calls per agent per day. It is Ants' own guard, not an OpenAI limit. OpenAI's plan allowance applies on top. A single agent can also be changed under Agents.
+      </p>
+      <div className="row">
+        <input type="number" min={0} max={10000} value={cap} onChange={(e) => setCap(e.target.value)} style={{ width: 120 }} />
+        <button className="btn" disabled={n === s.defaultSpendCap} onClick={() => void save(false)}>
+          Set for new agents
+        </button>
+        <button className="btn ghost" onClick={() => void save(true)}>
+          Apply to every agent
+        </button>
+      </div>
+      {done && <p className="muted small">{done}</p>}
+    </section>
+  );
+}
+
+// ---------- connectors ----------
+
+const STATE_PILL: Record<Connector["status"]["state"], string> = { connected: "pill good", connecting: "pill", error: "pill bad", disabled: "pill" };
+
+function ConnectorsTab() {
+  const [list, setList] = useState<Connector[]>([]);
+  const [templates, setTemplates] = useState<ConnectorTemplate[]>([]);
+  const load = useCallback(async () => {
+    const r = await get<{ connectors: Connector[]; templates: ConnectorTemplate[] }>("/api/connectors");
+    setList(r.connectors);
+    setTemplates(r.templates);
+  }, []);
+  useEffect(() => {
+    void load();
+    // A connecting server settles a moment later.
+    return onLive((e) => (e.type === "providers" || e.type === "agents") && void load());
+  }, [load]);
+
+  return (
+    <div className="stack">
+      <p className="lead">
+        Connectors let agents use other apps through MCP, the tool interface most apps now publish. A connected app's tools show up in each agent's allowlist under Agents. Tools the app marks
+        read-only run freely. Anything else waits for your yes in the chat, with the exact arguments.
+      </p>
+      {list.map((c) => (
+        <ConnectorCard key={c.id} c={c} reload={load} />
+      ))}
+      {!list.length && <p className="muted">No connectors yet.</p>}
+      <AddConnector templates={templates} reload={load} />
+    </div>
+  );
+}
+
+function ConnectorCard({ c, reload }: { c: Connector; reload: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const run = async (f: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await f();
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="card">
+      <h2>
+        {c.name} <span className={STATE_PILL[c.status.state]}>{c.status.state}</span>{" "}
+        <span className="pill">{c.transport === "stdio" ? "local command" : "hosted"}</span>
+      </h2>
+      <p className="muted small mono">{c.transport === "stdio" ? [c.command, ...(c.args ?? [])].join(" ") : c.url}</p>
+      {c.status.error && <p className="error small">{c.status.error}</p>}
+      {c.transport === "stdio" && <p className="muted small">Runs as a program on this machine with your user's permissions. It can reach the network on its own; the privacy mode only governs Ants' own requests.</p>}
+      {(c.envKeys.length > 0 || c.headerKeys.length > 0) && (
+        <p className="muted small">Stored securely: {[...c.envKeys, ...c.headerKeys].join(", ")}</p>
+      )}
+      <div className="chips">
+        {c.status.tools.map((t) => (
+          <code key={t.name} className="chip" title={t.description}>
+            {t.name.slice(`mcp_${c.id.replace(/-/g, "_")}_`.length)}
+            {t.readOnly ? " · read" : " · asks"}
+          </code>
+        ))}
+      </div>
+      <div className="row" style={{ marginTop: 8 }}>
+        <button className="btn" disabled={busy} onClick={() => void run(() => post(`/api/connectors/${c.id}/reconnect`))}>
+          Reconnect
+        </button>
+        <button className="btn" disabled={busy} onClick={() => void run(() => patch(`/api/connectors/${c.id}`, { enabled: !c.enabled }))}>
+          {c.enabled ? "Disable" : "Enable"}
+        </button>
+        <button className="btn ghost" disabled={busy} onClick={() => confirm(`Remove ${c.name} and its stored credentials?`) && void run(() => del(`/api/connectors/${c.id}`))}>
+          Remove
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function AddConnector({ templates, reload }: { templates: ConnectorTemplate[]; reload: () => void }) {
+  const [tpl, setTpl] = useState("");
+  const [name, setName] = useState("");
+  const [command, setCommand] = useState("");
+  const [args, setArgs] = useState("");
+  const [url, setUrl] = useState("");
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const t = templates.find((x) => x.id === tpl);
+  const secretNames = [...(t?.env ?? []), ...(t?.headers ?? [])];
+
+  const pick = (id: string) => {
+    const x = templates.find((y) => y.id === id);
+    setTpl(id);
+    setError("");
+    setSecrets({});
+    setName(x && !x.id.startsWith("custom") ? x.name : "");
+    setCommand(x?.command ?? "");
+    setArgs((x?.args ?? []).join(" "));
+    setUrl(x?.url ?? "");
+  };
+
+  const add = async () => {
+    if (!t) return;
+    setBusy(true);
+    setError("");
+    try {
+      const vals = (names: readonly string[] | undefined) => Object.fromEntries((names ?? []).map((k) => [k, secrets[k] ?? ""]));
+      await post("/api/connectors", {
+        name,
+        transport: t.transport,
+        command,
+        args: args.trim() ? args.trim().split(/\s+/) : [],
+        url,
+        env: vals(t.env),
+        headers: vals(t.headers),
+      });
+      pick("");
+      reload();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card">
+      <h2>Add a connector</h2>
+      <label>
+        App
+        <select value={tpl} onChange={(e) => pick(e.target.value)}>
+          <option value="">Choose…</option>
+          {templates.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {t && (
+        <div className="stack">
+          {t.note && <p className="muted small">{t.note}</p>}
+          <label>
+            Name
+            <input value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          {t.transport === "stdio" ? (
+            <div className="grid2">
+              <label>
+                Command
+                <input value={command} onChange={(e) => setCommand(e.target.value)} spellCheck={false} />
+              </label>
+              <label>
+                Arguments
+                <input value={args} onChange={(e) => setArgs(e.target.value)} spellCheck={false} />
+              </label>
+            </div>
+          ) : (
+            <label>
+              URL
+              <input value={url} onChange={(e) => setUrl(e.target.value)} spellCheck={false} placeholder="https://" />
+            </label>
+          )}
+          {secretNames.map((k) => (
+            <label key={k}>
+              {k}
+              <input type="password" autoComplete="off" value={secrets[k] ?? ""} onChange={(e) => setSecrets({ ...secrets, [k]: e.target.value })} />
+            </label>
+          ))}
+          {t.transport === "stdio" && <p className="muted small">Only the variables listed here are passed to the program. Ants' own keys are not.</p>}
+          {error && <p className="error small">{error}</p>}
+          <div className="row">
+            <button className="btn primary" disabled={busy || !name.trim()} onClick={() => void add()}>
+              Connect
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
